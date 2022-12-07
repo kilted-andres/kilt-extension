@@ -1,38 +1,40 @@
 import {
-  KeyringPair,
+  // KeyringPair,
   Did,
   SignCallback,
-  NewDidEncryptionKey,
+  // NewDidEncryptionKey,
   Blockchain,
-  KiltAddress,
+  // KiltAddress,
   KiltKeyringPair,
   DidDocument,
-  init,
+  // init,
   ChainHelpers,
   CType,
   DidUri,
+  ConfigService,
+  KiltEncryptionKeypair
 } from '@kiltprotocol/sdk-js'
-import { ApiPromise, WsProvider } from '@polkadot/api'
-import { Keypair } from '@polkadot/util-crypto/types'
+// import { ApiPromise, WsProvider } from '@polkadot/api'
+// import { Keypair } from '@polkadot/util-crypto/types'
 import { BN } from '@polkadot/util'
 import { Keyring } from '@kiltprotocol/utils'
 import {
   naclBoxPairFromSecret,
   blake2AsU8a,
   keyFromPath,
-  ed25519PairFromSeed,
+  sr25519PairFromSeed,
   keyExtractPath,
   mnemonicToMiniSecret,
   cryptoWaitReady,
 } from '@polkadot/util-crypto'
 import { ctypeDomainLinkage } from '../wellKnownDidConfiguration/wellKnownDidConfiguration'
 
-export async function buildConnection(wsEndpoint: string): Promise<ApiPromise> {
-  const provider = new WsProvider(wsEndpoint)
-  const api = await ApiPromise.create({ provider })
-  await init({ api })
-  return api.isReadyOrError
-}
+// export async function buildConnection(wsEndpoint: string): Promise<ApiPromise> {
+//   const provider = new WsProvider(wsEndpoint)
+//   const api = await ApiPromise.create({ provider })
+//   await init({ api })
+//   return api.isReadyOrError
+// }
 
 export const faucet = async () => {
   await cryptoWaitReady()
@@ -45,10 +47,11 @@ export const faucet = async () => {
 }
 
 export async function fundAccount(
-  address: KeyringPair['address'],
+  address: KiltKeyringPair['address'],
   amount: BN,
-  api: ApiPromise
+  //api: ApiPromise
 ): Promise<void> {
+  const api = ConfigService.get('api');
   const transferTx = api.tx.balances.transfer(address, amount)
   const devAccount = await faucet()
 
@@ -57,19 +60,19 @@ export async function fundAccount(
   })
 }
 
-export async function keypairs(account: KeyringPair, mnemonic: string) {
+export async function keypairs(account: KiltKeyringPair, mnemonic: string) {
   const authentication = {
     ...account.derive('//did//0'),
-    type: 'ed25519',
+    type: 'sr25519',
   } as KiltKeyringPair
   const assertion = {
     ...account.derive('//did//assertion//0'),
-    type: 'ed25519',
+    type: 'sr25519',
   } as KiltKeyringPair
-  const keyAgreement: NewDidEncryptionKey & Keypair = (function () {
-    const secretKeyPair = ed25519PairFromSeed(mnemonicToMiniSecret(mnemonic))
+  const keyAgreement: KiltEncryptionKeypair = (function () {
+    const secretKeyPair = sr25519PairFromSeed(mnemonicToMiniSecret(mnemonic))
     const { path } = keyExtractPath('//did//keyAgreement//0')
-    const { secretKey } = keyFromPath(secretKeyPair, path, 'ed25519')
+    const { secretKey } = keyFromPath(secretKeyPair, path, 'sr25519')
     return {
       ...naclBoxPairFromSecret(blake2AsU8a(secretKey)),
       type: 'x25519',
@@ -84,7 +87,7 @@ export async function keypairs(account: KeyringPair, mnemonic: string) {
 }
 
 export async function generateDid(
-  account: KeyringPair,
+  account: KiltKeyringPair,
   mnemonic: string
 ): Promise<DidDocument> {
   const { authentication, assertion, keyAgreement } = await keypairs(
@@ -102,9 +105,9 @@ export async function generateDid(
       assertionMethod: [assertion],
       keyAgreement: [keyAgreement],
     },
-    account.address as KiltAddress,
+    account.address,
     async ({ data }) => ({
-      data: authentication.sign(data),
+      signature: authentication.sign(data),
       keyType: authentication.type,
     })
   )
@@ -123,24 +126,26 @@ export async function assertionSigner({
   assertion,
   didDocument,
 }: {
-  assertion: KeyringPair
+  assertion: KiltKeyringPair
   didDocument: DidDocument
 }): Promise<SignCallback> {
   const { assertionMethod } = didDocument
   if (!assertionMethod) throw new Error('no assertionMethod')
   return async ({ data }) => ({
-    data: assertion.sign(data),
-    keyType: 'ed25519',
+    signature: assertion.sign(data),
+    keyType: 'sr25519',
     keyUri: `${didDocument.uri}${assertionMethod[0].id}`,
   })
 }
 
+
+
 export async function createCtype(
   didUri: DidUri,
-  account: KeyringPair,
+  account: KiltKeyringPair,
   mnemonic: string,
-  api: ApiPromise
 ) {
+  const api = ConfigService.get('api');
   const { assertion } = await keypairs(account, mnemonic)
   const fullDid = await Did.resolve(didUri)
   if (!fullDid) throw new Error('no did')
@@ -151,14 +156,15 @@ export async function createCtype(
   const encodedCType = CType.toChain(ctypeDomainLinkage)
   const ctypeTx = api.tx.ctype.add(encodedCType)
 
-  const authorizedCtypeCreationTx = await Did.authorizeExtrinsic(
+  const authorizedCtypeCreationTx = await Did.authorizeTx(
     didUri,
     ctypeTx,
-    async ({ data }) => ({
-      data: assertion.sign(data),
-      keyType: assertion.type,
-      keyUri: `${document.uri}${assertionMethod[0].id}`,
-    }),
+    // async ({ data }) => ({
+    //   signature: assertion.sign(data),
+    //   keyType: assertion.type,
+    //   keyUri: `${document.uri}${assertionMethod[0].id}`,
+    // }),
+    await assertionSigner({ assertion, didDocument: document }),
     account.address as `4${string}`
   )
 

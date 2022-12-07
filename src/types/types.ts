@@ -5,7 +5,7 @@ import {
   DidResourceUri,
 } from '@kiltprotocol/types'
 import { HexString } from '@polkadot/util/types'
-import { types as VC_TYPES } from '@kiltprotocol/vc-export'
+import { SelfSignedProof, VerifiableCredential } from '@kiltprotocol/vc-export'
 
 export type This = typeof globalThis
 const DEFAULT_VERIFIABLECREDENTIAL_CONTEXT =
@@ -46,6 +46,7 @@ export interface ApiWindow extends This {
 export interface CredentialSubject {
   id: DidUri
   origin: string
+  rootHash: `0x${string}`
 }
 
 const context = [
@@ -54,12 +55,12 @@ const context = [
 ]
 export interface DomainLinkageCredential
   extends Omit<
-    VC_TYPES.VerifiableCredential,
+    VerifiableCredential,
     '@context' | 'legitimationIds' | 'credentialSubject' | 'proof'
   > {
   '@context': typeof context
   credentialSubject: CredentialSubject
-  proof: VC_TYPES.SelfSignedProof
+  proof: SelfSignedProof
 }
 
 export interface VerifiableDomainLinkagePresentation {
